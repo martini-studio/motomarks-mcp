@@ -1,32 +1,37 @@
 #!/usr/bin/env node
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { ConfigError, loadConfig, redactText } from "./config.js";
-import { MotomarksClient } from "./motomarks-client.js";
-import { registerPrompts } from "./prompts/index.js";
-import { registerResources } from "./resources/docs.js";
-import { registerTools } from "./tools/index.js";
+import { ConfigError, loadConfig, redactText, type MotomarksConfig } from "./config.js";
+import { createMotomarksMcpServer } from "./server.js";
+
+export type { MotomarksConfig } from "./config.js";
+export { ConfigError, loadConfig, redactText, sanitizeApiToken } from "./config.js";
+export { MotomarksClient, MotomarksApiError } from "./motomarks-client.js";
+export {
+  createMotomarksMcpServer,
+  type MotomarksMcpServer,
+  type MotomarksMcpServerOptions,
+} from "./server.js";
 
 export async function main(): Promise<void> {
   const config = loadConfig();
-  const client = new MotomarksClient(config);
-
-  const server = new McpServer({
-    name: "motomarks-mcp",
-    version: "0.1.0",
-  });
-
-  registerTools(server, client, config);
-  registerResources(server, client, config);
-  registerPrompts(server);
+  const { server } = createMotomarksMcpServer(config);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
-main().catch((error) => {
+function isCliEntrypoint(): boolean {
+  return process.argv[1] === fileURLToPath(import.meta.url);
+}
+
+function handleStartupError(error: unknown, config?: Partial<MotomarksConfig>): never {
   const message = error instanceof Error ? error.message : String(error);
   const status = error instanceof ConfigError ? "Configuration error" : "Motomarks MCP server failed";
-  console.error(`${status}: ${redactText(message)}`);
+  console.error(`${status}: ${redactText(message, config)}`);
   process.exit(1);
-});
+}
+
+if (isCliEntrypoint()) {
+  main().catch((error) => handleStartupError(error));
+}
